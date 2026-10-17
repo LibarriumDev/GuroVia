@@ -46,7 +46,7 @@ export default async function HomePage() {
           <Brand />
           <nav aria-label="Main navigation" className="platform-nav">
             <a href="#schools">Find a school</a>
-            <Link className="button button-primary" href="/schools/register">Register a school <span aria-hidden="true">→</span></Link>
+            <Link className="button button-outline" href="/demo/school-registration">Try registration demo</Link><Link className="button button-primary" href="/schools/register">Register a school <span aria-hidden="true">→</span></Link>
           </nav>
         </div>
       </header>
@@ -58,7 +58,7 @@ export default async function HomePage() {
           <p>GuroVia helps schools manage class assessments, teacher workflows, and private student grade reports through a dedicated school portal.</p>
           <div className="platform-hero-actions">
             <Link href="/schools/register" className="button button-primary">Register your school <span aria-hidden="true">→</span></Link>
-            <a href="#schools" className="button button-outline">Find your school</a>
+            <Link href="/demo/school-registration" className="button button-outline">See how it works</Link>
           </div>
           <p className="gurovia-hero-note">For school administrators, teachers, students, and families.</p>
         </div>

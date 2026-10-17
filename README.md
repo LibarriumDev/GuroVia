@@ -119,3 +119,13 @@ The privacy-choice panel always explains necessary session/security storage. Opt
 For existing multi-tenant databases, back up Supabase and apply `supabase/migrations/20261019_gurovia_legal_acceptance.sql` after `20261017_multi_tenant_schools.sql` and `20261018_multitenant_integrity_hardening.sql`. This additive migration records the policy versions acknowledged by the authenticated school owner during school registration. The API validates versions server-side and does not treat this checkbox as optional analytics consent. For fresh installations, `supabase/schema.sql` now includes the acknowledgement columns.
 
 Before release, test a clean school registration against staging after the migration; verify all five legal acceptance fields are stored with the submitting authenticated user and server timestamp; check consent choices with and without `NEXT_PUBLIC_GA_MEASUREMENT_ID`; confirm analytics receives no student/teacher paths or query parameters; and run the full typecheck and production build.
+
+
+## School registration simulation
+
+Visit `/demo/school-registration` to walk through school profile setup, generated portal-link previews, teacher approval, section creation, and sample grade entry. The demo is client-only: it makes no API calls, does not use Supabase, and stores no school or grade data. Use fictional details. See `SCHOOL_REGISTRATION_SIMULATION.md`.
+
+
+### Class scorebook SQL Editor error (grading_period missing)
+
+The current GuroVia scorebook uses `term_number` (Term 1–3). Use the corrected `supabase/migrations/20261015_class_scorebook.sql` and follow `CLASS_SCOREBOOK_SQL_ERROR_FIX.md`. Do not run a stale SNHS-only migration that references `grading_period`.

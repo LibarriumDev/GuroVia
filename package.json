@@ -11,7 +11,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "security:check": "node scripts/check-security-remediation.mjs",
-    "tenant:check": "node scripts/check-multitenant.mjs"
+    "tenant:check": "node scripts/check-multitenant.mjs",
+    "demo:check": "node scripts/check-registration-simulation.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",

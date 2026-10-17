@@ -1,0 +1,31 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+
+const root = process.cwd();
+const componentPath = path.join(root, 'components/school-registration-simulator.tsx');
+const pagePath = path.join(root, 'app/demo/school-registration/page.tsx');
+const homePath = path.join(root, 'app/page.tsx');
+const registrationPath = path.join(root, 'components/school-registration-form.tsx');
+const component = fs.readFileSync(componentPath, 'utf8');
+const page = fs.readFileSync(pagePath, 'utf8');
+const home = fs.readFileSync(homePath, 'utf8');
+const registration = fs.readFileSync(registrationPath, 'utf8');
+
+assert.match(page, /robots:\s*\{\s*index:\s*false/);
+assert.match(page, /SchoolRegistrationSimulator/);
+assert.match(home, /href="\/demo\/school-registration"/);
+assert.match(registration, /Try the interactive registration demo/);
+assert.match(component, /Simulation only/);
+assert.match(component, /saved to a database/);
+assert.match(component, /gurovia\.example/);
+assert.match(component, /Teacher membership request/);
+assert.match(component, /Create a class section/);
+assert.match(component, /SAMPLE CLASS RECORD/);
+assert.doesNotMatch(component, /fetch\s*\(|getSupabaseBrowserClient|localStorage|sessionStorage/);
+console.log('PASS Registration demo is linked from homepage and real registration');
+console.log('PASS Demo route is noindex');
+console.log('PASS Demo clearly explains that no real data is sent or stored');
+console.log('PASS Demo includes school profile, portal, staff, section, and grades stages');
+console.log('PASS Demo contains no API fetch, Supabase client, or browser storage calls');
+console.log('\nResult: 5 passed, 0 failed');

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">GuroVia</title>
+  <rect x="3" y="3" width="58" height="58" rx="16" fill="#245C46"/>
+  <path d="M19 19.5c5.8-2.9 10.5-2 13 1.1 2.5-3.1 7.2-4 13-1.1v24.2c-5.9-2.3-10.3-1.2-13 2.1-2.7-3.3-7.1-4.4-13-2.1z" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M32 21v24.8" fill="none" stroke="#CBE4D2" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M23 28h4m-4 5h4m10-5h4m-4 5h4" fill="none" stroke="#CBE4D2" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

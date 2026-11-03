@@ -40,6 +40,7 @@ export async function POST(request: Request) {
     const legalAcceptedAt = new Date().toISOString();
     const name = clean(form.get("name"), 160);
     const shortName = clean(form.get("shortName"), 48);
+    const officialSchoolId = clean(form.get("officialSchoolId"), 20).toUpperCase();
     const slug = slugify(clean(form.get("slug"), 60));
     const email = clean(form.get("contactEmail"), 254).toLowerCase();
     const phone = clean(form.get("phone"), 32) || null;
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
     const website = clean(form.get("website"), 240) || null;
     const logo = form.get("logo");
     if (name.length < 3 || shortName.length < 2) return jsonError("Enter a school name and short name.", 400);
+    if (!/^[A-Z0-9][A-Z0-9-]{2,19}$/.test(officialSchoolId)) return jsonError("Enter a valid official School ID (3–20 letters, numbers, or hyphens).", 400);
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length < 3 || RESERVED_SLUGS.has(slug)) return jsonError("Choose a valid school link name that is not reserved by the platform.", 400);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return jsonError("Enter a valid school contact email.", 400);
     if (website && !/^https:\/\//i.test(website)) return jsonError("Website URLs must start with https://.", 400);
@@ -59,7 +61,7 @@ export async function POST(request: Request) {
     const admin = getSupabaseAdmin();
     createdSchoolId = randomUUID();
     const { error: schoolError } = await admin.from("schools").insert({
-      id: createdSchoolId, name, short_name: shortName, slug, contact_email: email,
+      id: createdSchoolId, name, short_name: shortName, official_school_id: officialSchoolId, slug, contact_email: email,
       phone, address, city, province, website, created_by: auth.user.id, status: "active",
       platform_terms_version: PLATFORM_TERMS_VERSION,
       platform_terms_accepted_at: legalAcceptedAt,
@@ -72,7 +74,12 @@ export async function POST(request: Request) {
       legal_accepted_by: auth.user.id
     });
     if (schoolError) {
-      if (schoolError.code === "23505") return jsonError("That personalized school link is already taken. Choose another name.", 409);
+      if (schoolError.code === "23505") {
+        const duplicate = `${schoolError.message ?? ""} ${schoolError.details ?? ""}`.toLowerCase();
+        if (duplicate.includes("official_school_id")) return jsonError("That Official School ID is already registered. Check the ID or contact GuroVia support.", 409);
+        if (duplicate.includes("slug")) return jsonError("That personalized school link is already taken. Choose another name.", 409);
+        return jsonError("A school record with one of these details already exists. Check the School ID and portal link.", 409);
+      }
       throw schoolError;
     }
 
@@ -86,7 +93,7 @@ export async function POST(request: Request) {
     const { error: membershipError } = await admin.from("school_memberships").insert({ school_id: createdSchoolId, user_id: auth.user.id, role: "owner", status: "active" });
     if (membershipError) throw membershipError;
 
-    return Response.json({ success: true, slug, url: `/s/${slug}`, teacherUrl: `/s/${slug}/teacher`, schoolName: name }, {
+    return Response.json({ success: true, slug, url: `/s/${slug}`, teacherUrl: `/s/${slug}/teacher`, schoolName: name, officialSchoolId }, {
       status: 201, headers: { "Cache-Control": "no-store, no-cache, must-revalidate, private", "X-Request-ID": requestId }
     });
   } catch (error) {

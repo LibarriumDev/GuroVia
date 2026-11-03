@@ -31,7 +31,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const nonce = requestHeaders.get("x-nonce") ?? undefined;
   return (
     <html lang="en-PH">
-      <body>
+      <body suppressHydrationWarning>
         <script nonce={nonce} type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd).replace(/</g, "\\u003c") }} />
         {children}
         <AnalyticsConsent />

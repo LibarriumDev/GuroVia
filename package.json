@@ -10,9 +10,14 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "env:check": "node scripts/check-local-env.mjs",
+    "secrets:generate": "node scripts/generate-local-secrets.mjs",
     "security:check": "node scripts/check-security-remediation.mjs",
     "tenant:check": "node scripts/check-multitenant.mjs",
-    "demo:check": "node scripts/check-registration-simulation.mjs"
+    "registration:check": "node scripts/check-registration-prerequisites.mjs",
+    "demo:check": "node scripts/check-registration-simulation.mjs",
+    "school-id:check": "node scripts/check-school-id-discovery.mjs",
+    "sections:check": "node scripts/check-section-api.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",

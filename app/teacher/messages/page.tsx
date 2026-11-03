@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ContactInbox } from "@/components/contact-inbox";
+import { getRenderDateSnapshot } from "@/lib/render-date";
 
 export const metadata: Metadata = {
   title: "School contact inbox",
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function ContactInboxPage() {
-  return <ContactInbox />;
+  return <ContactInbox currentYear={getRenderDateSnapshot().year} />;
 }

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params; const school = await getSchoolBySlug(slug);
   if (!school) return { title: "School not found | GuroVia" };
-  return { title: `${school.name} Terms of Service`, description: `Terms for using the ${school.name} grade portal.`, alternates: { canonical: `/s/${school.slug}/terms` }, robots: { index: true, follow: true } };
+  return { title: `${school.name} Terms of Service`, description: `Terms for using the ${school.name} grade portal.`, alternates: { canonical: `/s/${school.slug}/terms` }, robots: { index: false, follow: false, nocache: true } };
 }
 export default async function TenantTermsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params; const school = await getSchoolBySlug(slug); if (!school) notFound();

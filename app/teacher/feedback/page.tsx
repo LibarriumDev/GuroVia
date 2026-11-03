@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ParentFeedbackInbox } from "@/components/parent-feedback-inbox";
+import { getRenderDateSnapshot } from "@/lib/render-date";
 
 export const metadata: Metadata = {
   title: "Parent Feedback | Teacher Portal",
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function ParentFeedbackPage() {
-  return <ParentFeedbackInbox />;
+  return <ParentFeedbackInbox currentYear={getRenderDateSnapshot().year} />;
 }

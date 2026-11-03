@@ -28,17 +28,28 @@ function privateResponse(body: unknown, status = 200, renewedTicket?: string) {
 export async function GET(request: Request) {
   const requestId = getRequestId(request);
   try {
+    const isCheckOnly = new URL(request.url).searchParams.get("check") === "1";
     const verified = verifyStudentSessionTicket(readCookie(request, "snhs_student_session"));
-    if (!verified) return jsonError("Your student session has ended. Please sign in again.", 401);
+    // A login-screen session probe is expected to run while logged out; return a
+    // normal unauthenticated result instead of generating a console 401 noise.
+    if (!verified) {
+      return isCheckOnly
+        ? privateResponse({ authenticated: false }, 200)
+        : jsonError("Your student session has ended. Please sign in again.", 401);
+    }
     const school = await getRequestSchool(request);
     if (!school) return privateResponse({ error: "This school link is not available." }, 404);
     const admin = getSupabaseAdmin();
     const { data: studentAccess, error: accessError } = await admin.from("students")
       .select("id") .eq("id", verified.studentId).eq("school_id", school.id).maybeSingle();
     if (accessError) throw accessError;
-    if (!studentAccess) return privateResponse({ error: "Your session does not belong to this school. Sign in again from your school's link." }, 401);
+    if (!studentAccess) {
+      return isCheckOnly
+        ? privateResponse({ authenticated: false }, 200)
+        : privateResponse({ error: "Your session does not belong to this school. Sign in again from your school's link." }, 401);
+    }
     const renewedTicket = createStudentSessionTicket(verified.studentId);
-    if (new URL(request.url).searchParams.get("check") === "1") return privateResponse({ authenticated: true }, 200, renewedTicket);
+    if (isCheckOnly) return privateResponse({ authenticated: true }, 200, renewedTicket);
     const report = await getStudentGradeReport(verified.studentId, school.id, school.slug);
     if (!report) return privateResponse({ error: "This student record is no longer available. Please contact your class adviser." }, 404);
     return privateResponse(report, 200, renewedTicket);

@@ -833,6 +833,7 @@ create table if not exists public.schools (
   id uuid primary key default gen_random_uuid(),
   name text not null check (char_length(btrim(name)) between 3 and 160),
   short_name text not null check (char_length(btrim(short_name)) between 2 and 48),
+  official_school_id text,
   slug text not null unique check (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' and char_length(slug) between 3 and 60),
   contact_email text not null check (char_length(contact_email) <= 254),
   phone text check (phone is null or char_length(phone) <= 32),
@@ -855,6 +856,24 @@ create table if not exists public.schools (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.schools add column if not exists official_school_id text;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'schools_official_school_id_format_check') then
+    alter table public.schools add constraint schools_official_school_id_format_check
+      check (official_school_id is null or official_school_id ~ '^[A-Za-z0-9][A-Za-z0-9-]{2,19}$');
+  end if;
+end $$;
+
+create unique index if not exists schools_official_school_id_uq
+  on public.schools (upper(btrim(official_school_id)))
+  where official_school_id is not null;
+
+create index if not exists schools_status_official_id_idx
+  on public.schools (status, upper(btrim(official_school_id)))
+  where official_school_id is not null;
 
 alter table public.schools drop constraint if exists schools_legal_notice_versions_length_check;
 alter table public.schools add constraint schools_legal_notice_versions_length_check check (
@@ -882,6 +901,16 @@ create index if not exists school_memberships_school_status_idx on public.school
 insert into public.schools(name, short_name, slug, contact_email, city, province, status)
 values ('Salvacion National High School', 'SNHS', 'salvacion-national-high-school', coalesce(nullif(current_setting('app.snhs_contact_email', true), ''), 'privacy-contact@example.invalid'), 'Busuanga', 'Palawan', 'active')
 on conflict (slug) do nothing;
+
+-- Seed the known official DepEd School ID for the default SNHS tenant, without overwriting a custom assignment.
+update public.schools as target
+set official_school_id = '301734', updated_at = now()
+where target.slug = 'salvacion-national-high-school'
+  and (target.official_school_id is null or btrim(target.official_school_id) = '')
+  and not exists (
+    select 1 from public.schools other
+    where upper(btrim(other.official_school_id)) = '301734' and other.id <> target.id
+  );
 
 alter table public.teacher_sections add column if not exists school_id uuid references public.schools(id) on delete restrict;
 alter table public.students add column if not exists school_id uuid references public.schools(id) on delete restrict;

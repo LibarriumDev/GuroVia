@@ -2,8 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Brand } from "@/components/brand";
 import { DEVELOPER_EMAIL, DEVELOPER_NAME, PRODUCT_NAME } from "@/lib/constants";
-import { schoolPath } from "@/lib/school-path";
-import { listActiveSchoolDirectory } from "@/lib/server/tenant";
+import { SchoolFinderForm } from "@/components/school-finder-form";
 
 export const dynamic = "force-dynamic";
 
@@ -37,15 +36,14 @@ const platformSteps = [
   }
 ];
 
-export default async function HomePage() {
-  const schools = await listActiveSchoolDirectory();
+export default function HomePage() {
   return (
     <main className="platform-home gurovia-home">
       <header className="platform-header">
         <div className="platform-header-inner">
           <Brand />
           <nav aria-label="Main navigation" className="platform-nav">
-            <a href="#schools">Find a school</a>
+            <Link href="/schools/find">Find a school</Link>
             <Link className="button button-outline" href="/demo/school-registration">Try registration demo</Link><Link className="button button-primary" href="/schools/register">Register a school <span aria-hidden="true">→</span></Link>
           </nav>
         </div>
@@ -81,43 +79,14 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section id="schools" className="platform-school-directory">
-        <div className="platform-section-heading">
-          <div>
-            <span className="section-kicker">SCHOOL DIRECTORY</span>
-            <h2>Find your school.</h2>
-            <p>Choose your school's official portal to continue.</p>
-          </div>
-          <span className="platform-school-count">{schools.length} {schools.length === 1 ? "school" : "schools"}</span>
+      <section id="find-school" className="gurovia-school-finder" aria-labelledby="find-school-heading">
+        <div className="gurovia-school-finder-copy">
+          <span className="section-kicker">STUDENT & TEACHER ACCESS</span>
+          <h2 id="find-school-heading">Find your school.</h2>
+          <p>Enter your official School ID to open the correct school portal. Schools are not displayed in a public directory.</p>
         </div>
-        {schools.length ? (
-          <div className="platform-school-grid">
-            {schools.map((school) => (
-              <article className="platform-school-card" key={school.slug}>
-                <Link className="platform-school-card-main" href={schoolPath(school.slug)}>
-                  <span className="platform-school-logo">
-                    {school.logoUrl ? <img src={school.logoUrl} alt={`${school.name} logo`} loading="lazy" decoding="async" /> : <span>{school.short_name.slice(0, 2).toUpperCase()}</span>}
-                  </span>
-                  <span className="platform-school-copy">
-                    <strong>{school.name}</strong>
-                    <small>{[school.city, school.province].filter(Boolean).join(", ") || "School portal"}</small>
-                  </span>
-                  <span className="platform-school-arrow" aria-hidden="true">→</span>
-                </Link>
-                <div className="platform-school-card-actions">
-                  <Link href={schoolPath(school.slug, "/student")}>Student portal</Link>
-                  <Link href={schoolPath(school.slug, "/teacher")}>Teacher sign in</Link>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="platform-directory-empty">
-            <strong>No schools listed yet.</strong>
-            <p>Register a school to create its dedicated portal.</p>
-            <Link className="button button-primary" href="/schools/register">Register a school <span aria-hidden="true">→</span></Link>
-          </div>
-        )}
+        <SchoolFinderForm compact />
+        <p className="gurovia-school-finder-help">Not sure of your School ID? Ask your school administrator.</p>
       </section>
 
       <section className="platform-owner-cta gurovia-owner-cta">

@@ -12,10 +12,12 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   const requestId = getRequestId(request);
+  let stage = "rate_limit";
   try {
     if (!(await allowRequest(request, "student-register", 5, 3600))) {
       return jsonError("Too many registration attempts. Please try again later.", 429);
     }
+    stage = "read_body";
     const boundedBody = await readBodyLimited(request, 2_500 * 1024);
     if (!boundedBody) return jsonError("The registration request is too large. Keep the processed profile photo under 2 MB.", 413);
     const formRequest = requestWithBufferedBody(request, boundedBody);
@@ -52,9 +54,11 @@ export async function POST(request: Request) {
       return jsonError("The profile photo must be a valid WebP image.");
     }
 
+    stage = "resolve_school";
     const school = await getRequestSchool(request);
     if (!school) return jsonError("This school link is not available.", 404);
     const admin = getSupabaseAdmin();
+    stage = "load_section";
     const { data: section, error: sectionError } = await admin
       .from("teacher_sections")
       .select("id, school_id, teacher_id, grade_level, section_name, academic_year")
@@ -65,22 +69,36 @@ export async function POST(request: Request) {
       .maybeSingle();
     if (sectionError || !section) return jsonError("That class is not accepting registrations. Refresh the list and try again.", 404);
 
+    stage = "load_adviser";
+    const { data: adviserProfile, error: adviserError } = await admin
+      .from("teacher_profiles")
+      .select("full_name")
+      .eq("id", section.teacher_id)
+      .maybeSingle();
+    if (adviserError) throw adviserError;
+
+    stage = "prepare_student";
     const accessDigest = digestStudentAccess(fullName, lrn);
+    const lrnDigest = digestStudentLrn(lrn);
+    const pinDigest = digestStudentPin(pin, accessDigest);
+    const encryptedBirthday = encryptStudentBirthday(birthday);
     const studentId = randomUUID();
     const photoPath = `students/${studentId}/${randomUUID()}.webp`;
+    stage = "upload_photo";
     const { error: uploadError } = await admin.storage.from("profile-photos").upload(photoPath, photoBytes, {
       contentType: "image/webp",
       cacheControl: "3600",
       upsert: false
     });
     if (uploadError) throw uploadError;
+    stage = "insert_student";
     const { error } = await admin.from("students").insert({
       id: studentId,
       full_name: fullName,
-      lrn_digest: digestStudentLrn(lrn),
+      lrn_digest: lrnDigest,
       access_digest: accessDigest,
-      pin_digest: digestStudentPin(pin, accessDigest),
-      date_of_birth_encrypted: encryptStudentBirthday(birthday),
+      pin_digest: pinDigest,
+      date_of_birth_encrypted: encryptedBirthday,
       gender,
       avatar_path: photoPath,
       section_id: section.id,
@@ -94,13 +112,6 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    const { data: adviserProfile, error: adviserError } = await admin
-      .from("teacher_profiles")
-      .select("full_name")
-      .eq("id", section.teacher_id)
-      .maybeSingle();
-    if (adviserError) throw adviserError;
-
     return Response.json({
       message: "Registration received. Use your full name, LRN, and 4-digit PIN to view your grades.",
       gradeLevel: section.grade_level,
@@ -110,6 +121,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[api/students/register] request failed", {
       requestId,
+      stage,
       errorName: error instanceof Error ? error.name : "UnknownError",
       code: error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") || undefined : undefined
     });

@@ -9,7 +9,7 @@ export function SchoolLandingPage({ school }: { school: SchoolBranding }) {
     <main className="school-landing page-wrap">
       <header className="school-landing-nav">
         <Link href={schoolPath(school.slug)} className="school-brand-lockup">
-          {school.logoUrl ? <img src={school.logoUrl} alt={`${school.name} logo`} /> : <span className="school-brand-placeholder">{school.short_name.slice(0, 2).toUpperCase()}</span>}
+          {school.logoUrl ? <img src={school.logoUrl} alt={`${school.name} logo`} width={56} height={56} decoding="async" /> : <span className="school-brand-placeholder">{school.short_name.slice(0, 2).toUpperCase()}</span>}
           <span><strong>{school.name}</strong><small>STUDENT & TEACHER PORTAL</small></span>
         </Link>
         <Link className="button button-outline" href="/">GuroVia</Link>
@@ -18,6 +18,7 @@ export function SchoolLandingPage({ school }: { school: SchoolBranding }) {
         <span className="section-kicker">POWERED BY GUROVIA</span>
         <h1>{school.name}<br /><em>Grades, clearly organized.</em></h1>
         <p>Secure access to student records, class assessments, and teacher-managed grades for {school.short_name}.</p>
+        {school.official_school_id && <p className="school-landing-school-id">Official School ID: <strong>{school.official_school_id}</strong></p>}
         {location && <p className="school-landing-location">{location}{school.address ? ` · ${school.address}` : ""}</p>}
         <div className="school-landing-actions">
           <Link className="button button-primary" href={schoolPath(school.slug, "/student")}>Student portal <span aria-hidden="true">→</span></Link>

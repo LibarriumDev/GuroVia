@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     }
     const { data: student, error } = await admin
       .from("students")
-      .select("id, school_id, full_name, avatar_path, avatar_webp_data_url, pin_digest, section_id, section:teacher_sections(teacher_id, grade_level, section_name, academic_year)")
+      .select("id, school_id, full_name, avatar_path, avatar_webp_data_url, pin_digest, section_id, section:teacher_sections!students_school_section_tenant_fk(teacher_id, grade_level, section_name, academic_year)")
       .eq("school_id", school.id)
       .eq("access_digest", accessDigest)
       .maybeSingle();

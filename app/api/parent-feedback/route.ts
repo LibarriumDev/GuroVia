@@ -39,11 +39,6 @@ function relationValue<T>(value: T | T[] | null | undefined): T | null {
   return value ?? null;
 }
 
-function applyTeacherScope<T extends { eq: (column: string, value: string) => T }>(query: T, auth: Extract<Awaited<ReturnType<typeof authorizeTeacher>>, { ok: true }>) {
-  const schoolQuery = query.eq("school_id", auth.school.id);
-  return auth.membership.role === "teacher" ? schoolQuery.eq("teacher_id", auth.user.id) : schoolQuery;
-}
-
 /** School owners/admins can review school feedback; teachers only see feedback assigned to them. */
 export async function GET(request: Request) {
   const requestId = getRequestId(request);
@@ -64,7 +59,7 @@ export async function GET(request: Request) {
     }
 
     let messagesQuery = auth.admin.from("student_parent_feedback")
-      .select("id, school_id, student_id, section_id, teacher_id, guardian_name_encrypted, message_encrypted, subject_name, status, privacy_notice_version, consented_at, created_at, updated_at, student:students(full_name), section:teacher_sections(grade_level, section_name, academic_year)")
+      .select("id, school_id, student_id, section_id, teacher_id, guardian_name_encrypted, message_encrypted, subject_name, status, privacy_notice_version, consented_at, created_at, updated_at, student:students!student_parent_feedback_school_student_section_fk(full_name), section:teacher_sections(grade_level, section_name, academic_year)")
       .eq("school_id", auth.school.id)
       .order("created_at", { ascending: false })
       .limit(100);

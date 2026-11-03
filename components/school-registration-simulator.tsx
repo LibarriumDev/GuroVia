@@ -76,7 +76,7 @@ export function SchoolRegistrationSimulator() {
   }
 
   async function copyDemoLink(path: string) {
-    const url = `https://gurovia.example${path}`;
+    const url = `https://gurovia-web.darrenbardelas-dev.workers.dev${path}`;
     try {
       await navigator.clipboard.writeText(url);
       setNotice(`Copied example link: ${url}`);

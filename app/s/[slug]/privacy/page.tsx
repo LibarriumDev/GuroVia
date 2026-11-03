@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params; const school = await getSchoolBySlug(slug);
   if (!school) return { title: "School not found | GuroVia" };
-  return { title: `${school.name} Privacy Policy`, description: `School-specific privacy notice for ${school.name} grade portal.`, alternates: { canonical: `/s/${school.slug}/privacy` }, robots: { index: true, follow: true } };
+  return { title: `${school.name} Privacy Policy`, description: `School-specific privacy notice for ${school.name} grade portal.`, alternates: { canonical: `/s/${school.slug}/privacy` }, robots: { index: false, follow: false, nocache: true } };
 }
 export default async function TenantPrivacyPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params; const school = await getSchoolBySlug(slug); if (!school) notFound();

@@ -89,7 +89,7 @@ export async function POST(request: Request) {
     stage = "load_student_and_section";
     const { data: student, error: studentError } = await admin
       .from("students")
-      .select("id, school_id, section_id, section:teacher_sections(id, teacher_id, school_id)")
+      .select("id, school_id, section_id, section:teacher_sections!students_school_section_tenant_fk(id, teacher_id, school_id)")
       .eq("id", studentId)
       .eq("school_id", school.id)
       .maybeSingle();

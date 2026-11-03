@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readBodyLimited, requestWithBufferedBody } from "@/lib/server/body-limit";
 import { getRequestId } from "@/lib/server/request-id";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { allowRequest, jsonError, verifyStudentSessionTicket } from "@/lib/server/security";
+import { allowRequest, verifyStudentSessionTicket } from "@/lib/server/security";
 import { getRequestSchool } from "@/lib/server/tenant";
 
 export const runtime = "nodejs";

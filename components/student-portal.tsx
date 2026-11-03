@@ -27,7 +27,7 @@ type LookupResult = {
   commentUpdatedAt: string | null;
 };
 
-export function StudentPortal({ school }: { school?: SchoolBranding }) {
+export function StudentPortal({ school, today, currentYear }: { school?: SchoolBranding; today: string; currentYear: number }) {
   const router = useRouter();
   const localPath = (path = "") => schoolPath(school?.slug, path);
   const [mode, setMode] = useState<"lookup" | "register">("lookup");
@@ -80,9 +80,14 @@ export function StudentPortal({ school }: { school?: SchoolBranding }) {
     const requestedMode = new URLSearchParams(window.location.search).get("mode");
     let active = true;
     fetchWithRequestId("/api/students/session?check=1", { cache: "no-store", credentials: "same-origin" })
-      .then((response) => {
+      .then(async (response) => {
         if (!active) return;
-        if (response.ok) router.replace(localPath("/student/dashboard"));
+        if (!response.ok) {
+          if (requestedMode === "register") setMode("register");
+          return;
+        }
+        const payload = await response.json().catch(() => ({})) as { authenticated?: boolean };
+        if (payload.authenticated === true) router.replace(localPath("/student/dashboard"));
         else if (requestedMode === "register") setMode("register");
       })
       .catch(() => { if (active && requestedMode === "register") setMode("register"); });
@@ -380,7 +385,7 @@ export function StudentPortal({ school }: { school?: SchoolBranding }) {
                     <label className="field"><span>Full name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" required minLength={3} maxLength={120} placeholder="As shown on your school record" /></label>
                     <div className="field-row">
                       <label className="field"><span>LRN</span><input value={lrn} onChange={(event) => setLrn(event.target.value.replace(/\D/g, "").slice(0, 20))} inputMode="numeric" autoComplete="off" required minLength={8} maxLength={20} placeholder="8–20 digits" /></label>
-                      <label className="field"><span>Birthday</span><input type="date" value={birthday} onChange={(event) => setBirthday(event.target.value)} autoComplete="bday" required max={new Date().toISOString().slice(0, 10)} /></label>
+                      <label className="field"><span>Birthday</span><input type="date" value={birthday} onChange={(event) => setBirthday(event.target.value)} autoComplete="bday" required max={today} /></label>
                     </div>
                     <label className="field"><span>Create a 4-digit PIN</span><input type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" autoComplete="off" pattern="[0-9]{4}" required minLength={4} maxLength={4} placeholder="Choose a private PIN" /><small className="field-help">Use this PIN with your name and LRN whenever you view your record.</small></label>
                     <label className="field"><span>Class section <small>Grade level is assigned automatically</small></span>
@@ -453,7 +458,7 @@ export function StudentPortal({ school }: { school?: SchoolBranding }) {
             <p className="side-help">Need help? <Link href={localPath("/teacher")}>Contact your teacher <span aria-hidden="true">↗</span></Link></p>
           </aside>
         </div>
-        <footer className="portal-footer"><span>© {new Date().getFullYear()} {school?.name || "GuroVia"}</span><span>{[school?.city, school?.province].filter(Boolean).join(", ")}</span><nav className="portal-legal-links" aria-label="Footer links"><Link href={localPath()}>Home</Link><Link href={localPath("/privacy")}>Privacy Policy</Link><Link href={localPath("/terms")}>Terms of Service</Link><Link href={localPath("/agreement")}>Agreement of Use</Link><Link href={localPath("/cookies")}>Cookie Policy</Link></nav></footer>
+        <footer className="portal-footer"><span>© {currentYear} {school?.name || "GuroVia"}</span><span>{[school?.city, school?.province].filter(Boolean).join(", ")}</span><nav className="portal-legal-links" aria-label="Footer links"><Link href={localPath()}>Home</Link><Link href={localPath("/privacy")}>Privacy Policy</Link><Link href={localPath("/terms")}>Terms of Service</Link><Link href={localPath("/agreement")}>Agreement of Use</Link><Link href={localPath("/cookies")}>Cookie Policy</Link></nav></footer>
       </div>
     </main>
   );

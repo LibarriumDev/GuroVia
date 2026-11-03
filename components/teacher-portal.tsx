@@ -6,11 +6,11 @@ import { PortalHeader } from "@/components/brand";
 import { ClassScorebook } from "@/components/class-scorebook";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toWebpBlob } from "@/lib/student-images";
-import { getCurrentAcademicYear } from "@/lib/academic-year";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/constants";
 import Link from "next/link";
 import type { SchoolBranding } from "@/lib/school-types";
 import { schoolPath } from "@/lib/school-path";
+import { getManilaDateString } from "@/lib/render-date";
 
 type TeacherUser = { id: string; email?: string };
 type SchoolSection = { id: string; teacher_id: string; school_id?: string; grade_level: number; section_name: string; academic_year: string; is_active: boolean };
@@ -33,13 +33,11 @@ function teacherCommentFor(student?: StudentRow) {
   return row?.comment ?? "";
 }
 
-function localDate() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
-
-function academicYear() {
-  return getCurrentAcademicYear();
+function isInvalidLoginCredentials(error: unknown) {
+  if (typeof error !== "object" || error === null) return false;
+  const authError = error as { code?: unknown; message?: unknown };
+  return authError.code === "invalid_credentials" ||
+    (typeof authError.message === "string" && /^invalid (login )?credentials\.?$/i.test(authError.message.trim()));
 }
 
 function teacherConfirmationUrl(schoolSlug?: string) {
@@ -66,8 +64,7 @@ function gradesToDrafts(grades: GradeRow[]): GradeDraft[] {
 
 type SchoolMembership = { role: "owner" | "admin" | "teacher"; status: "pending" | "active" | "suspended" };
 
-export function TeacherPortal({ school }: { school?: SchoolBranding }) {
-  const schoolId = school?.id;
+export function TeacherPortal({ school, initialDate, currentYear, currentAcademicYear }: { school?: SchoolBranding; initialDate: string; currentYear: number; currentAcademicYear: string }) {
   const schoolSlug = school?.slug;
   const localPath = (path = "") => schoolPath(schoolSlug, path);
   const supabase = getSupabaseBrowserClient();
@@ -92,7 +89,7 @@ export function TeacherPortal({ school }: { school?: SchoolBranding }) {
   const [assessmentName, setAssessmentName] = useState("");
   const [assessmentScore, setAssessmentScore] = useState("");
   const [assessmentMaxScore, setAssessmentMaxScore] = useState("100");
-  const [assessmentDate, setAssessmentDate] = useState(localDate);
+  const [assessmentDate, setAssessmentDate] = useState(initialDate);
   const [commentDraft, setCommentDraft] = useState("");
   const [search, setSearch] = useState("");
   const [showAddSection, setShowAddSection] = useState(false);
@@ -169,19 +166,24 @@ export function TeacherPortal({ school }: { school?: SchoolBranding }) {
         setSections([]); setStudents([]); setSelectedSectionId(""); setLoadingDashboard(false); return;
       }
       setMembershipState("active");
-      const [{ data: profile, error: profileError }, { data: classRows, error: classError }] = await Promise.all([
+      const sectionsEndpoint = schoolSlug
+        ? `/api/teacher/sections?school_slug=${encodeURIComponent(schoolSlug)}`
+        : "/api/teacher/sections";
+      const [profileResult, sectionResult] = await Promise.all([
         supabase.from("teacher_profiles").select("full_name, gender, avatar_path, avatar_webp_data_url").eq("id", teacherId).maybeSingle(),
-        (() => {
-          let query = supabase.from("teacher_sections")
-            .select("id, teacher_id, school_id, grade_level, section_name, academic_year, is_active");
-          if (schoolId) query = query.eq("school_id", schoolId);
-          // Teachers see only their own sections. Owners and administrators can
-          // review all sections in this school, as already permitted by tenant RLS.
-          if (membership.role === "teacher") query = query.eq("teacher_id", teacherId);
-          return query.order("grade_level").order("section_name");
-        })()
+        fetchWithRequestId(sectionsEndpoint, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+          credentials: "same-origin",
+        }).then(async (response) => {
+          const payload = await response.json().catch(() => ({})) as { sections?: SchoolSection[]; error?: string };
+          if (!response.ok) throw new Error(payload.error || "We couldn’t load your class sections.");
+          return payload.sections ?? [];
+        })
       ]);
-      if (profileError || classError) throw new Error("We couldn’t load your class data. Check the school membership and Supabase migration.");
+      const { data: profile, error: profileError } = profileResult;
+      if (profileError) throw new Error("We couldn’t load your teacher profile.");
+      const classRows = sectionResult;
       setProfileName(profile?.full_name ?? "Teacher"); setProfileGender(profile?.gender ?? "Prefer not to say"); setProfileAvatarPath(profile?.avatar_path ?? null);
       clearObjectUrls(profilePhotoObjectUrls);
       if (profile?.avatar_path) {
@@ -197,7 +199,7 @@ export function TeacherPortal({ school }: { school?: SchoolBranding }) {
       setMembershipState("error");
       setError(caught instanceof Error ? caught.message : "We couldn’t load your school portal.");
     } finally { setLoadingDashboard(false); }
-  }, [supabase, schoolId, clearObjectUrls, createProfileObjectUrl]);
+  }, [supabase, schoolSlug, clearObjectUrls, createProfileObjectUrl]);
 
   useEffect(() => { if (user) void loadDashboard(user.id); else setLoadingDashboard(false); }, [user, loadDashboard]);
 
@@ -311,6 +313,10 @@ export function TeacherPortal({ school }: { school?: SchoolBranding }) {
         if (data.user) setUser({ id: data.user.id, email: data.user.email });
       }
     } catch (caught) {
+      if (authStage === "sign_in" && isInvalidLoginCredentials(caught)) {
+        setError("Email or password is incorrect. Please try again.");
+        return;
+      }
       // Correlation ID only; never log credentials, email, or form contents.
       console.error("[teacher-portal] authentication failed", {
         requestId,
@@ -349,17 +355,32 @@ export function TeacherPortal({ school }: { school?: SchoolBranding }) {
   }
 
   async function handleAddSection(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!supabase || !user) return;
+    event.preventDefault();
+    if (!supabase || !user) return;
     setBusy(true); setError(""); setNotice("");
-    const { data, error: insertError } = await supabase.from("teacher_sections").insert({
-      teacher_id: user.id, school_id: schoolId, grade_level: Number(newGradeLevel), section_name: newSectionName.trim(), academic_year: academicYear(), is_active: true
-    }).select("id, teacher_id, grade_level, section_name, academic_year, is_active").single();
-    if (insertError) setError(insertError.code === "23505" ? "That section is already listed for this school year." : "We couldn’t add that class section.");
-    else {
-      setSections((previous) => [...previous, data as SchoolSection].sort((a, b) => a.grade_level - b.grade_level || a.section_name.localeCompare(b.section_name)));
-      setSelectedSectionId(data.id); setNewSectionName(""); setShowAddSection(false); setNotice("Class section added and opened for registration.");
-    }
-    setBusy(false);
+    try {
+      const { data: authData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      const accessToken = authData.session?.access_token;
+      if (!accessToken) throw new Error("Your session has expired. Sign in again before adding a section.");
+      const endpoint = schoolSlug
+        ? `/api/teacher/sections?school_slug=${encodeURIComponent(schoolSlug)}`
+        : "/api/teacher/sections";
+      const response = await fetchWithRequestId(endpoint, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ gradeLevel: Number(newGradeLevel), sectionName: newSectionName.trim() }),
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const payload = await response.json().catch(() => ({})) as { section?: SchoolSection; error?: string };
+      if (!response.ok || !payload.section) throw new Error(payload.error || "We couldn’t add that class section.");
+      const created = payload.section;
+      setSections((previous) => [...previous, created].sort((a, b) => a.grade_level - b.grade_level || a.section_name.localeCompare(b.section_name)));
+      setSelectedSectionId(created.id); setNewSectionName(""); setShowAddSection(false); setNotice("Class section added and opened for registration.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "We couldn’t add that class section.");
+    } finally { setBusy(false); }
   }
 
   async function handleSaveGrades(event: FormEvent<HTMLFormElement>) {
@@ -414,7 +435,7 @@ export function TeacherPortal({ school }: { school?: SchoolBranding }) {
     });
     if (insertError) setError("The assessment score could not be saved. Check the score and try again.");
     else {
-      setAssessmentName(""); setAssessmentScore(""); setAssessmentDate(localDate());
+      setAssessmentName(""); setAssessmentScore(""); setAssessmentDate(getManilaDateString());
       await loadRoster(selectedSectionId);
       setNotice("Assessment score saved and shared with the student.");
     }
@@ -488,8 +509,8 @@ export function TeacherPortal({ school }: { school?: SchoolBranding }) {
             {showAddSection && <form method="post" className="add-section-panel" onSubmit={handleAddSection}><div><span className="form-overline">NEW CLASS</span><h2>Open another section</h2><p>Students can register as soon as it’s added.</p></div><label className="field"><span>Grade level</span><select value={newGradeLevel} onChange={(event) => setNewGradeLevel(event.target.value)}>{[7, 8, 9, 10, 11, 12].map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label><label className="field"><span>Section name</span><input value={newSectionName} onChange={(event) => setNewSectionName(event.target.value)} maxLength={40} required placeholder="e.g. Rizal" /></label><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add section"}</button></form>}
             {loadingDashboard ? <div className="dashboard-loading"><span className="spinner" /> Loading your workspace…</div> : sections.length ? (
               <>
-                <div className="dashboard-stats"><div><span>CLASS ROSTER</span><b>{students.length.toString().padStart(2, "0")}<small> students</small></b></div><div><span>SUBJECT RECORDS</span><b>{students.reduce((sum, student) => sum + (student.subject_grades?.length ?? 0), 0).toString().padStart(2, "0")}<small> entered</small></b></div><div><span>CLASS AVERAGE</span><b>{classAverage ?? "—"}<small>{classAverage === null ? " no grades" : " / 100"}</small></b></div><div className="stats-school-year"><span>ACADEMIC YEAR</span><b>{selectedSection?.academic_year ?? academicYear()}</b></div></div>
-                {showClassScorebook ? (selectedSection ? <ClassScorebook sectionId={selectedSection.id} sectionLabel={`Grade ${selectedSection.grade_level} — ${selectedSection.section_name}`} academicYear={selectedSection.academic_year} students={students.map((student) => ({ id: student.id, full_name: student.full_name }))} userId={user.id} /> : null) : <div className="teacher-workgrid">
+                <div className="dashboard-stats"><div><span>CLASS ROSTER</span><b>{students.length.toString().padStart(2, "0")}<small> students</small></b></div><div><span>SUBJECT RECORDS</span><b>{students.reduce((sum, student) => sum + (student.subject_grades?.length ?? 0), 0).toString().padStart(2, "0")}<small> entered</small></b></div><div><span>CLASS AVERAGE</span><b>{classAverage ?? "—"}<small>{classAverage === null ? " no grades" : " / 100"}</small></b></div><div className="stats-school-year"><span>ACADEMIC YEAR</span><b>{selectedSection?.academic_year ?? currentAcademicYear}</b></div></div>
+                  {showClassScorebook ? (selectedSection ? <ClassScorebook sectionId={selectedSection.id} sectionLabel={`Grade ${selectedSection.grade_level} — ${selectedSection.section_name}`} academicYear={selectedSection.academic_year} students={students.map((student) => ({ id: student.id, full_name: student.full_name }))} userId={user.id} initialDate={initialDate} /> : null) : <div className="teacher-workgrid">
                   <section className="roster-panel"><div className="panel-heading"><div><span className="form-overline">GRADE {selectedSection?.grade_level} · {selectedSection?.section_name}</span><h2>Class roster</h2></div><label className="roster-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find a student" aria-label="Find a student" /></label></div>
                     <div className="roster-table-wrap"><table className="roster-table"><thead><tr><th>STUDENT</th><th>SUBJECTS</th><th>AVERAGE</th><th>RECORD</th></tr></thead><tbody>
                       {loadingRoster ? <tr><td colSpan={4} className="table-message"><span className="spinner" /> Loading roster…</td></tr> : visibleStudents.map((student) => {
@@ -573,7 +594,7 @@ export function TeacherPortal({ school }: { school?: SchoolBranding }) {
             <aside className="teacher-auth-aside"><div className="aside-emblem">{school?.logoUrl ? <img src={school.logoUrl} alt={`${school.name} logo`} /> : <span className="brand-school-fallback" aria-hidden="true">{(school?.short_name || "SG").slice(0, 2).toUpperCase()}</span>}</div><span className="section-kicker">FOR TEACHERS</span><h2>Classroom records,<br /><em>kept together.</em></h2><p>Organize your students in one class roster and enter grades by subject and term.</p><div className="aside-rule" /><div className="teacher-feature"><span>01</span><p><b>Create your account</b><br />Sign up with your school email.</p></div><div className="teacher-feature"><span>02</span><p><b>Register your class</b><br />Choose your grade and section inside the portal.</p></div><div className="teacher-feature"><span>03</span><p><b>Record each term</b><br />Save subject marks in a clear grade table.</p></div></aside>
           </div>
         )}
-        <footer className="portal-footer"><span>© {new Date().getFullYear()} {school?.name || "GuroVia"}</span><span>{[school?.city, school?.province].filter(Boolean).join(", ")}</span><nav className="portal-legal-links" aria-label="Footer links"><Link href={localPath()}>Home</Link>{!schoolSlug && <Link href="/teacher/messages">Contact inbox</Link>}<Link href={localPath("/teacher/feedback")}>Parent feedback</Link><Link href="/contact">Contact</Link><Link href={localPath("/privacy")}>Privacy</Link><Link href={localPath("/terms")}>Terms</Link><Link href={localPath("/agreement")}>Agreement</Link><Link href={localPath("/cookies")}>Cookies</Link>{schoolMembership?.role && ["owner", "admin"].includes(schoolMembership.role) && <Link href={localPath("/manage")}>Manage school</Link>}</nav></footer>
+        <footer className="portal-footer"><span>© {currentYear} {school?.name || "GuroVia"}</span><span>{[school?.city, school?.province].filter(Boolean).join(", ")}</span><nav className="portal-legal-links" aria-label="Footer links"><Link href={localPath()}>Home</Link>{!schoolSlug && <Link href="/teacher/messages">Contact inbox</Link>}<Link href={localPath("/teacher/feedback")}>Parent feedback</Link><Link href="/contact">Contact</Link><Link href={localPath("/privacy")}>Privacy</Link><Link href={localPath("/terms")}>Terms</Link><Link href={localPath("/agreement")}>Agreement</Link><Link href={localPath("/cookies")}>Cookies</Link>{schoolMembership?.role && ["owner", "admin"].includes(schoolMembership.role) && <Link href={localPath("/manage")}>Manage school</Link>}</nav></footer>
       </div>
     </main>
   );

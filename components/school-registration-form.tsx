@@ -18,6 +18,7 @@ export function SchoolRegistrationForm() {
   const [checking, setChecking] = useState(true);
   const [name, setName] = useState("");
   const [shortName, setShortName] = useState("");
+  const [officialSchoolId, setOfficialSchoolId] = useState("");
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
   const [contactEmail, setContactEmail] = useState("");
@@ -31,7 +32,7 @@ export function SchoolRegistrationForm() {
   const [legalAccepted, setLegalAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState<{ name: string; slug: string; url: string; teacherUrl: string } | null>(null);
+  const [success, setSuccess] = useState<{ name: string; officialSchoolId: string; slug: string; url: string; teacherUrl: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -71,7 +72,7 @@ export function SchoolRegistrationForm() {
       if (!token) throw new Error("Your teacher session expired. Sign in again and reopen this page.");
       if (!logo) throw new Error("Upload your school logo to continue.");
       const form = new FormData();
-      form.set("name", name); form.set("shortName", shortName); form.set("slug", slug || makeSlug(name));
+      form.set("name", name); form.set("shortName", shortName); form.set("officialSchoolId", officialSchoolId.trim().toUpperCase()); form.set("slug", slug || makeSlug(name));
       form.set("contactEmail", contactEmail); form.set("phone", phone); form.set("address", address);
       form.set("city", city); form.set("province", province); form.set("website", website); form.set("logo", logo, "school-logo.webp");
       form.set("legalAcceptance", legalAccepted ? "accepted" : "");
@@ -82,7 +83,7 @@ export function SchoolRegistrationForm() {
       const response = await fetchWithRequestId("/api/schools/register", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form, cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "School registration failed.");
-      setSuccess({ name: payload.schoolName, slug: payload.slug, url: payload.url, teacherUrl: payload.teacherUrl });
+      setSuccess({ name: payload.schoolName, officialSchoolId: payload.officialSchoolId, slug: payload.slug, url: payload.url, teacherUrl: payload.teacherUrl });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "School registration failed.");
     } finally { setBusy(false); }
@@ -90,12 +91,12 @@ export function SchoolRegistrationForm() {
 
   if (checking) return <main className="school-register-page"><section className="school-register-card"><p>Checking teacher sign-in…</p></section></main>;
   if (!supabase || !sessionToken) return <main className="school-register-page"><section className="school-register-card"><span className="section-kicker">GUROVIA SCHOOL PLATFORM</span><h1>Register your school</h1><p>First create or sign in to a teacher account. After signing in, return here to create a school portal and its personalized link.</p><Link className="button button-primary" href="/teacher">Open teacher sign in <span aria-hidden="true">→</span></Link><p className="school-register-footnote">Already signed in under another account? Sign out first, then use the account that should own this school.</p></section></main>;
-  if (success) return <main className="school-register-page"><section className="school-register-card"><span className="section-kicker">SCHOOL CREATED</span><h1>{success.name}</h1><p>Your school portal is ready.</p><label className="field"><span>Personalized school URL</span><input readOnly value={`${window.location.origin}${success.url}`} onFocus={(event) => event.currentTarget.select()} /></label><div className="school-register-actions"><Link className="button button-primary" href={success.teacherUrl}>Open school portal <span aria-hidden="true">→</span></Link><button type="button" className="button button-outline" onClick={() => void navigator.clipboard.writeText(`${window.location.origin}${success.url}`)}>Copy school link</button></div><p className="school-register-footnote">School owner account: {accountEmail}. Invite teachers by sharing the school link; their access requests must be approved by a school owner or administrator.</p></section></main>;
+  if (success) return <main className="school-register-page"><section className="school-register-card"><span className="section-kicker">SCHOOL CREATED</span><h1>{success.name}</h1><p>Your school portal is ready.</p><label className="field"><span>Official School ID</span><input readOnly value={success.officialSchoolId} onFocus={(event) => event.currentTarget.select()} /></label><label className="field"><span>Personalized school URL</span><input readOnly value={`${window.location.origin}${success.url}`} onFocus={(event) => event.currentTarget.select()} /></label><div className="school-register-actions"><Link className="button button-primary" href={success.teacherUrl}>Open school portal <span aria-hidden="true">→</span></Link><button type="button" className="button button-outline" onClick={() => void navigator.clipboard.writeText(`${window.location.origin}${success.url}`)}>Copy school link</button></div><p className="school-register-footnote">School owner account: {accountEmail}. Invite teachers by sharing the school link; their access requests must be approved by a school owner or administrator.</p></section></main>;
 
   return <main className="school-register-page"><section className="school-register-card"><span className="section-kicker">GUROVIA SCHOOL PLATFORM</span><h1>Register your school</h1><p>Create your school profile and receive a dedicated link for students and teachers.</p><p className="school-register-demo-link"><Link href="/demo/school-registration">Try the interactive registration demo</Link> before creating a real school portal.</p>
     <form method="post" className="school-register-form" onSubmit={submit}>
       <label className="field"><span>Official school name</span><input required minLength={3} maxLength={160} value={name} onChange={(event) => { setName(event.target.value); if (!slugEdited) setSlug(makeSlug(event.target.value)); if (!shortName) setShortName(event.target.value.trim().slice(0, 24)); }} placeholder="e.g. Example National High School" /></label>
-      <div className="school-register-grid"><label className="field"><span>Short name</span><input required minLength={2} maxLength={48} value={shortName} onChange={(event) => setShortName(event.target.value)} placeholder="e.g. ENHS" /></label><label className="field"><span>School link / slug</span><input required minLength={3} maxLength={60} pattern="[a-z0-9]+(-[a-z0-9]+)*" value={slug} onChange={(event) => { setSlugEdited(true); setSlug(makeSlug(event.target.value)); }} placeholder="your-school-name" /><small>Lowercase letters, numbers and hyphens.</small></label></div>
+      <div className="school-register-grid"><label className="field"><span>Official School ID</span><input required minLength={3} maxLength={20} pattern="[A-Za-z0-9](?:[A-Za-z0-9]|-){2,19}" value={officialSchoolId} onChange={(event) => setOfficialSchoolId(event.target.value.toUpperCase().replace(/\s+/g, ""))} placeholder="e.g. 301734" autoComplete="off" /><small>Use the school ID assigned by DepEd or your official school registry.</small></label><label className="field"><span>Short name</span><input required minLength={2} maxLength={48} value={shortName} onChange={(event) => setShortName(event.target.value)} placeholder="e.g. SNHS" /></label></div><label className="field"><span>School link / slug</span><input required minLength={3} maxLength={60} pattern="[a-z0-9]+(-[a-z0-9]+)*" value={slug} onChange={(event) => { setSlugEdited(true); setSlug(makeSlug(event.target.value)); }} placeholder="your-school-name" /><small>Lowercase letters, numbers and hyphens.</small></label>
       <label className="field"><span>Official contact email</span><input required type="email" maxLength={254} value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} /></label>
       <div className="school-register-grid"><label className="field"><span>Phone (optional)</span><input maxLength={32} value={phone} onChange={(event) => setPhone(event.target.value)} /></label><label className="field"><span>Website (optional)</span><input type="url" maxLength={240} value={website} onChange={(event) => setWebsite(event.target.value)} placeholder="https://school.gov.ph" /></label></div>
       <label className="field"><span>Address (optional)</span><input maxLength={240} value={address} onChange={(event) => setAddress(event.target.value)} /></label>

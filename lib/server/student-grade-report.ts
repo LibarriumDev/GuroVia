@@ -6,7 +6,7 @@ export async function getStudentGradeReport(studentId: string, schoolId?: string
   const admin = getSupabaseAdmin();
   let studentQuery = admin
     .from("students")
-    .select("id, school_id, full_name, avatar_path, avatar_webp_data_url, section_id, section:teacher_sections(teacher_id, grade_level, section_name, academic_year)")
+    .select("id, school_id, full_name, avatar_path, avatar_webp_data_url, section_id, section:teacher_sections!students_school_section_tenant_fk(teacher_id, grade_level, section_name, academic_year)")
     .eq("id", studentId);
   if (schoolId) studentQuery = studentQuery.eq("school_id", schoolId);
   const { data: student, error: studentError } = await studentQuery.maybeSingle();

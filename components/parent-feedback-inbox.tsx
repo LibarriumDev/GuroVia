@@ -28,7 +28,7 @@ function formatDate(value: string) {
   return Number.isNaN(date.getTime()) ? "Unknown date" : new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-export function ParentFeedbackInbox({ school }: { school?: SchoolBranding }) {
+export function ParentFeedbackInbox({ school, currentYear }: { school?: SchoolBranding; currentYear: number }) {
   const localPath = (path = "") => schoolPath(school?.slug, path);
   const [messages, setMessages] = useState<ParentFeedback[]>([]);
   const [accessToken, setAccessToken] = useState("");
@@ -112,7 +112,7 @@ export function ParentFeedbackInbox({ school }: { school?: SchoolBranding }) {
             ))}
           </section>
         )}
-        <footer className="portal-footer"><span>© {new Date().getFullYear()} {school?.name || "GuroVia"}</span><span>Private class-adviser feedback</span><nav className="portal-legal-links" aria-label="Footer links"><Link href={localPath("/teacher")}>Teacher portal</Link><Link href="/contact">Contact</Link><Link href={localPath("/privacy")}>Privacy</Link><Link href={localPath("/terms")}>Terms</Link><Link href={localPath("/agreement")}>Agreement</Link><Link href={localPath("/cookies")}>Cookies</Link></nav></footer>
+        <footer className="portal-footer"><span>© {currentYear} {school?.name || "GuroVia"}</span><span>Private class-adviser feedback</span><nav className="portal-legal-links" aria-label="Footer links"><Link href={localPath("/teacher")}>Teacher portal</Link><Link href="/contact">Contact</Link><Link href={localPath("/privacy")}>Privacy</Link><Link href={localPath("/terms")}>Terms</Link><Link href={localPath("/agreement")}>Agreement</Link><Link href={localPath("/cookies")}>Cookies</Link></nav></footer>
       </div>
     </main>
   );

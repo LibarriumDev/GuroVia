@@ -1,4 +1,3 @@
-import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -11,9 +10,10 @@ const requestHelper = read("lib/request-id.ts");
 const registerRoute = read("app/api/schools/register/route.ts");
 const managerRoute = read("app/api/schools/members/route.ts");
 const teacherPortal = read("components/teacher-portal.tsx");
+const teacherSectionsApi = read("app/api/teacher/sections/route.ts");
 const homePage = read("app/page.tsx");
 const publicTenant = read("app/s/[slug]/page.tsx");
-const publicDirectory = tenant.slice(tenant.indexOf("export async function listActiveSchoolDirectory"));
+const homeFinder = read("components/school-finder-form.tsx");
 
 const checks = [
   ["Tenant migration creates separate school records and memberships", /create table if not exists public\.schools/.test(migration) && /create table if not exists public\.school_memberships/.test(migration)],
@@ -25,10 +25,10 @@ const checks = [
   ["School registration requires authenticated and email-confirmed owner", /getBearerUser\(request\)/.test(registerRoute) && /email_confirmed_at/.test(registerRoute)],
   ["Membership changes require owner/admin authorization", /Only a school owner or administrator can manage access/.test(managerRoute)],
   ["Client API calls carry tenant slug as non-secret context", /school_slug/.test(requestHelper) && /school_slug/.test(tenant)],
-  ["Public directory explicitly selects only public school fields", /select\("name, short_name, slug, city, province, logo_path"\)/.test(publicDirectory) && !/select\("id, name, short_name, slug, contact_email/.test(publicDirectory)],
+  ["School lookup is by exact official School ID, not a public list", /SchoolFinderForm/.test(homePage) && /officialSchoolId/.test(homeFinder) && !/listActiveSchoolDirectory|schools\.map\(/.test(homePage)],
   ["Each school has a dedicated public portal route", /SchoolLandingPage/.test(publicTenant) && /getSchoolBySlug\(slug\)/.test(publicTenant)],
-  ["Platform homepage lists multiple active schools", /listActiveSchoolDirectory/.test(homePage) && /schools\.map\(/.test(homePage)],
-  ["Owner/admin can review school sections without reopening inactive classes", /membership\.role === "teacher"/.test(teacherPortal) && /Preserve inactive section state/i.test(teacherPortal) && !/update\(\{ is_active: true \}\)/.test(teacherPortal)],
+  ["Platform homepage does not publish a school directory", !/listActiveSchoolDirectory|schools\.map\(/.test(homePage)],
+  ["Owner/admin can review school sections without reopening inactive classes", /membership\.role === "teacher"/.test(teacherSectionsApi) && /\.eq\("school_id", context\.school\.id\)/.test(teacherSectionsApi) && !/\.eq\("is_active", true\)/.test(teacherSectionsApi) && /Preserve inactive section state/i.test(teacherPortal) && !/update\(\{ is_active: true \}\)/.test(teacherPortal)],
   ["Hardening migration is an additive upgrade for prior tenant deployments", /drop policy if exists \"school members create own sections\"/.test(hardening) && /student_parent_feedback_school_student_section_fk/.test(hardening)],
   ["Fresh schema includes the tenant controls and follow-up hardening", schema.includes("BEGIN MULTI-TENANT SCHOOL SUPPORT") && schema.includes("BEGIN MULTI-TENANT INTEGRITY HARDENING") && schema.includes("student_parent_feedback_school_student_section_fk") && schema.includes("is_active_school_member")],
 ];

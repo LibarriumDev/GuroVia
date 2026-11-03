@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Brand } from "@/components/brand";
 import { Breadcrumbs } from "@/components/breadcrumbs";
-import { DEVELOPER_EMAIL, DEVELOPER_NAME, PRODUCT_NAME } from "@/lib/constants";
+import { DEVELOPER_EMAIL, DEVELOPER_NAME } from "@/lib/constants";
 import type { SchoolBranding } from "@/lib/school-types";
 import { schoolPath } from "@/lib/school-path";
 

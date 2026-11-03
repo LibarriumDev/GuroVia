@@ -23,27 +23,15 @@ type GradebookScore = {
 };
 type GradebookSubject = { id: string; subject_name: string; created_at?: string };
 type ClassStudent = { id: string; full_name: string };
-type WeightProfile = "mathScience" | "languageSocial" | "performanceHeavy";
 type Weights = Record<ScoreCategory, number>;
 
 const CATEGORY_ORDER: ScoreCategory[] = ["Written Works", "Performance Tasks", "Summative Test/Exam"];
-const PROFILES: Record<WeightProfile, { label: string; weights: Weights }> = {
-  mathScience: { label: "Mathematics / Science — 40 / 40 / 20", weights: { "Written Works": 40, "Performance Tasks": 40, "Summative Test/Exam": 20 } },
-  languageSocial: { label: "Languages / AP / Values — 30 / 50 / 20", weights: { "Written Works": 30, "Performance Tasks": 50, "Summative Test/Exam": 20 } },
-  performanceHeavy: { label: "MAPEH / TLE — 20 / 60 / 20", weights: { "Written Works": 20, "Performance Tasks": 60, "Summative Test/Exam": 20 } }
+const CATEGORY_LABELS: Record<ScoreCategory, string> = {
+  "Written Works": "Written / Oral Works",
+  "Performance Tasks": "Product / Performance Tasks",
+  "Summative Test/Exam": "Summative Tests / Term Examinations"
 };
-
-function todayLocal() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
-
-function recommendedProfile(subject: string): WeightProfile {
-  const normalized = subject.trim().toLowerCase();
-  if (/mapeh|tle|technology|livelihood|arts|physical education|pe\b|music|health/.test(normalized)) return "performanceHeavy";
-  if (/math|science/.test(normalized)) return "mathScience";
-  return "languageSocial";
-}
+const DEFAULT_WEIGHTS: Weights = { "Written Works": 20, "Performance Tasks": 50, "Summative Test/Exam": 30 };
 
 function cellKey(assessmentId: string, studentId: string) {
   return `${assessmentId}:${studentId}`;
@@ -55,9 +43,11 @@ function calculateWeightedScore(
   scoreMap: Record<string, string>,
   weights: Weights
 ): number | null {
-  if (!assessments.length) return null;
+  if (!assessments.length || CATEGORY_ORDER.reduce((sum, category) => sum + weights[category], 0) !== 100) return null;
   let weighted = 0;
   for (const category of CATEGORY_ORDER) {
+    const categoryWeight = weights[category];
+    if (categoryWeight === 0) continue;
     const grouped = assessments.filter((assessment) => assessment.category === category);
     if (!grouped.length) return null;
     let earned = 0;
@@ -72,7 +62,7 @@ function calculateWeightedScore(
       possible += max;
     }
     if (possible <= 0) return null;
-    weighted += (earned / possible) * 100 * (weights[category] / 100);
+    weighted += (earned / possible) * 100 * (categoryWeight / 100);
   }
   return Math.round(weighted * 100) / 100;
 }
@@ -82,27 +72,31 @@ export function ClassScorebook({
   sectionLabel,
   academicYear,
   students,
-  userId
+  userId,
+  initialDate
 }: {
   sectionId: string;
   sectionLabel: string;
   academicYear: string;
   students: ClassStudent[];
   userId: string;
+  initialDate: string;
 }) {
   const supabase = getSupabaseBrowserClient();
   const [subjects, setSubjects] = useState<GradebookSubject[]>([]);
   const [newSubjectName, setNewSubjectName] = useState("");
   const [activeSubject, setActiveSubject] = useState("");
   const [activeTerm, setActiveTerm] = useState(1);
-  const [weightProfile, setWeightProfile] = useState<WeightProfile>("mathScience");
+  const [weights, setWeights] = useState<Weights>(DEFAULT_WEIGHTS);
+  const [weightsLoadedFor, setWeightsLoadedFor] = useState("");
+  const [weightStorageError, setWeightStorageError] = useState(false);
   const [assessments, setAssessments] = useState<GradebookAssessment[]>([]);
   const [scoreInputs, setScoreInputs] = useState<Record<string, string>>({});
   const [changedCells, setChangedCells] = useState<Record<string, true>>({});
   const [category, setCategory] = useState<ScoreCategory>("Written Works");
   const [assessmentName, setAssessmentName] = useState("");
   const [maxScore, setMaxScore] = useState("20");
-  const [assessmentDate, setAssessmentDate] = useState(todayLocal);
+  const [assessmentDate, setAssessmentDate] = useState(initialDate);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -111,7 +105,12 @@ export function ClassScorebook({
 
   const studentIds = useMemo(() => students.map((student) => student.id), [students]);
   const studentIdsKey = useMemo(() => studentIds.join(","), [studentIds]);
-  const weights = PROFILES[weightProfile].weights;
+  const weightsStorageKey = activeSubject.trim()
+    ? `gurovia:scorebook-weights:${sectionId}:${encodeURIComponent(activeSubject.trim().toLocaleLowerCase())}`
+    : "";
+  const weightsReady = !weightsStorageKey || weightsLoadedFor === weightsStorageKey;
+  const weightsTotal = CATEGORY_ORDER.reduce((sum, item) => sum + weights[item], 0);
+  const weightsValid = Number.isInteger(weightsTotal) && weightsTotal === 100 && CATEGORY_ORDER.every((item) => Number.isInteger(weights[item]) && weights[item] >= 0 && weights[item] <= 100);
   const sortedAssessments = useMemo(() => [...assessments].sort((left, right) => {
     const categoryDelta = CATEGORY_ORDER.indexOf(left.category) - CATEGORY_ORDER.indexOf(right.category);
     return categoryDelta || left.assessed_on.localeCompare(right.assessed_on) || left.created_at.localeCompare(right.created_at);
@@ -201,7 +200,48 @@ export function ClassScorebook({
   }, [supabase, sectionId, activeSubject, activeTerm, studentIdsKey]);
 
   useEffect(() => { void loadScorebook(); }, [loadScorebook]);
-  useEffect(() => { setWeightProfile(recommendedProfile(activeSubject)); }, [activeSubject]);
+  useEffect(() => {
+    if (!weightsStorageKey) {
+      setWeights(DEFAULT_WEIGHTS);
+      setWeightsLoadedFor("");
+      setWeightStorageError(false);
+      return;
+    }
+
+    let nextWeights = DEFAULT_WEIGHTS;
+    try {
+      const saved = window.localStorage.getItem(weightsStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Partial<Weights>;
+        const candidate = Object.fromEntries(CATEGORY_ORDER.map((item) => [item, parsed[item]])) as Weights;
+        const total = CATEGORY_ORDER.reduce((sum, item) => sum + candidate[item], 0);
+        if (CATEGORY_ORDER.every((item) => Number.isInteger(candidate[item]) && candidate[item] >= 0 && candidate[item] <= 100) && total === 100) {
+          nextWeights = candidate;
+        }
+      }
+      setWeightStorageError(false);
+    } catch {
+      setWeightStorageError(true);
+    }
+    setWeights(nextWeights);
+    setWeightsLoadedFor(weightsStorageKey);
+  }, [weightsStorageKey]);
+
+  useEffect(() => {
+    if (!weightsStorageKey || !weightsReady || !weightsValid) return;
+    try {
+      window.localStorage.setItem(weightsStorageKey, JSON.stringify(weights));
+      setWeightStorageError(false);
+    } catch {
+      setWeightStorageError(true);
+    }
+  }, [weights, weightsReady, weightsStorageKey, weightsValid]);
+
+  function updateWeight(categoryToUpdate: ScoreCategory, rawValue: string) {
+    const value = rawValue === "" ? 0 : Number(rawValue);
+    if (!Number.isInteger(value) || value < 0 || value > 100) return;
+    setWeights((current) => ({ ...current, [categoryToUpdate]: value }));
+  }
 
   async function handleCreateSubject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -353,8 +393,8 @@ export function ClassScorebook({
 
   const computedGrades = useMemo(() => students.map((student) => ({
     studentId: student.id,
-    value: calculateWeightedScore(student.id, sortedAssessments, scoreInputs, weights)
-  })), [students, sortedAssessments, scoreInputs, weights]);
+    value: weightsReady && weightsValid ? calculateWeightedScore(student.id, sortedAssessments, scoreInputs, weights) : null
+  })), [students, sortedAssessments, scoreInputs, weights, weightsReady, weightsValid]);
   const classAverage = useMemo(() => {
     const reported = computedGrades.map((grade) => grade.value).filter((value): value is number => value !== null);
     return reported.length ? Math.round((reported.reduce((sum, value) => sum + value, 0) / reported.length) * 100) / 100 : null;
@@ -373,7 +413,7 @@ export function ClassScorebook({
           <h2 id="class-scorebook-heading">Assessment entry</h2>
           <p>{sectionLabel} · {academicYear}. Enter one score per student for each assessment, like a digital E-Class Record.</p>
         </div>
-        <div className="scorebook-class-average"><span>COMPLETED INITIAL GRADES</span><strong>{classAverage === null ? "—" : classAverage.toFixed(2)}</strong><small>{computedGrades.filter((grade) => grade.value !== null).length} of {students.length} students complete</small></div>
+        <div className="scorebook-class-average"><span>COMPLETED INITIAL GRADES</span><strong>{classAverage === null ? "—" : classAverage.toFixed(2)}</strong><small>{!weightsReady ? "Loading saved weights…" : !weightsValid ? "Weight percentages must total 100%." : `${computedGrades.filter((grade) => grade.value !== null).length} of ${students.length} students complete`}</small></div>
       </div>
 
       <div className="scorebook-subject-manager">
@@ -389,14 +429,29 @@ export function ClassScorebook({
       </div>
 
       <div className="scorebook-weight-row">
-        <label className="field"><span>Suggested grading-weight profile</span><select value={weightProfile} onChange={(event) => setWeightProfile(event.target.value as WeightProfile)}><option value="mathScience">{PROFILES.mathScience.label}</option><option value="languageSocial">{PROFILES.languageSocial.label}</option><option value="performanceHeavy">{PROFILES.performanceHeavy.label}</option></select></label>
-        <p><strong>Current:</strong> WW {weights["Written Works"]}% · PT {weights["Performance Tasks"]}% · Summative {weights["Summative Test/Exam"]}%. Confirm these weights against the school-approved grading policy before using for official grades.</p>
+        <div className="scorebook-weight-panel" aria-labelledby="scorebook-weight-heading">
+          <div className="scorebook-weight-heading">
+            <div><span className="form-overline">GRADE WEIGHTS</span><h3 id="scorebook-weight-heading">Category percentages</h3></div>
+            <button className="button button-outline" type="button" onClick={() => setWeights(DEFAULT_WEIGHTS)} disabled={!weightsReady || CATEGORY_ORDER.every((item) => weights[item] === DEFAULT_WEIGHTS[item])}>Restore default</button>
+          </div>
+          <div className="scorebook-weight-inputs">
+            {CATEGORY_ORDER.map((item) => <label className="field" key={item}>
+              <span>{CATEGORY_LABELS[item]}</span>
+              <span className="scorebook-weight-input-wrap"><input type="number" min="0" max="100" step="1" inputMode="numeric" value={weights[item]} onChange={(event) => updateWeight(item, event.target.value)} disabled={!weightsReady} aria-label={`${CATEGORY_LABELS[item]} weight percentage`} /><span aria-hidden="true">%</span></span>
+            </label>)}
+          </div>
+          <p className={`scorebook-weight-total ${weightsValid ? "is-valid" : "is-invalid"}`} role="status" aria-live="polite">
+            {!weightsReady ? "Loading this subject’s saved weights…" : <>Total: <strong>{weightsTotal}%</strong> {weightsValid ? "· Grades use these weights." : "· Adjust the percentages so they total 100%. Grades are paused until then."}</>}
+            {weightStorageError && <span> Changes could not be saved in this browser.</span>}
+          </p>
+        </div>
+        <p className="scorebook-weight-help"><strong>Default: 20% / 50% / 30%.</strong> Choose the matching category when adding a quiz, activity, project, or exam; its score uses that category’s percentage. Valid totals save in this browser for each subject.</p>
       </div>
 
       <form method="post" className="scorebook-add-assessment" onSubmit={handleAddAssessment}>
         <div className="scorebook-section-heading"><div><span className="form-overline">ADD ASSESSMENT COLUMN</span><h3>{activeSubject || "Choose a subject"} · Term {activeTerm}</h3></div><span className="scorebook-small-tag">{sortedAssessments.length} assessment{sortedAssessments.length === 1 ? "" : "s"}</span></div>
         <div className="scorebook-add-grid">
-          <label className="field"><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value as ScoreCategory)}>{CATEGORY_ORDER.map((item) => <option key={item}>{item}</option>)}</select></label>
+          <label className="field"><span>Work category</span><select value={category} onChange={(event) => setCategory(event.target.value as ScoreCategory)}>{CATEGORY_ORDER.map((item) => <option key={item} value={item}>{CATEGORY_LABELS[item]}</option>)}</select></label>
           <label className="field"><span>Assessment name</span><input value={assessmentName} onChange={(event) => setAssessmentName(event.target.value)} minLength={2} maxLength={100} required placeholder="e.g. Written Work 1" /></label>
           <label className="field"><span>Highest possible score</span><input type="number" min="0.01" max="100000" step="0.01" value={maxScore} onChange={(event) => setMaxScore(event.target.value)} required /></label>
           <label className="field"><span>Date</span><input type="date" value={assessmentDate} onChange={(event) => setAssessmentDate(event.target.value)} required /></label>
@@ -417,18 +472,18 @@ export function ClassScorebook({
       <div className="scorebook-desktop-table-wrap scorebook-table-wrap">
         {loading ? <div className="scorebook-empty"><span className="spinner" /> Loading assessments and scores…</div> : !students.length ? <div className="scorebook-empty"><strong>No students in this class yet.</strong><p>Once students register in this section, they will appear as rows here.</p></div> : !sortedAssessments.length ? <div className="scorebook-empty"><strong>{activeSubject ? `No assessments for ${activeSubject}, Term ${activeTerm} yet.` : "Create or choose a saved subject first."}</strong><p>{activeSubject ? "Add the first Written Work, Performance Task and Summative Test/Exam above to set up the scorebook." : "Save a subject above. It will remain in the dropdown whenever you reopen this scorebook for this section."}</p></div> : (
           <table className="scorebook-table">
-            <thead><tr><th className="scorebook-student-col">Student</th>{sortedAssessments.map((assessment) => <th key={assessment.id}><div className="scorebook-assessment-heading"><span className={`scorebook-category scorebook-${CATEGORY_ORDER.indexOf(assessment.category)}`}>{assessment.category}</span><strong>{assessment.assessment_name}</strong><small>Max: {Number(assessment.max_score)}</small><button type="button" onClick={() => void handleDeleteAssessment(assessment)} aria-label={`Delete ${assessment.assessment_name}`} disabled={saving}>Delete column</button></div></th>)}<th className="scorebook-grade-col">Initial<br />weighted score</th></tr></thead>
+            <thead><tr><th className="scorebook-student-col">Student</th>{sortedAssessments.map((assessment) => <th key={assessment.id}><div className="scorebook-assessment-heading"><span className={`scorebook-category scorebook-${CATEGORY_ORDER.indexOf(assessment.category)}`}>{CATEGORY_LABELS[assessment.category]}</span><strong>{assessment.assessment_name}</strong><small>Max: {Number(assessment.max_score)}</small><button type="button" onClick={() => void handleDeleteAssessment(assessment)} aria-label={`Delete ${assessment.assessment_name}`} disabled={saving}>Delete column</button></div></th>)}<th className="scorebook-grade-col">Initial<br />weighted score</th></tr></thead>
             <tbody>
               {visibleStudents.map((student) => {
                 const grade = computedGrades.find((row) => row.studentId === student.id)?.value ?? null;
                 return <tr key={student.id}>
-                  <th scope="row" className="scorebook-student-col"><span>{student.full_name}</span><small>{grade === null ? "Incomplete" : grade >= 75 ? "At/above 75" : "Below 75"}</small></th>
+                  <th scope="row" className="scorebook-student-col"><span>{student.full_name}</span><small>{!weightsReady ? "Loading weights" : !weightsValid ? "Fix category weights" : grade === null ? "Incomplete" : grade >= 75 ? "At/above 75" : "Below 75"}</small></th>
                   {sortedAssessments.map((assessment) => {
                     const key = cellKey(assessment.id, student.id);
                     const value = scoreInputs[key] ?? "";
-                    return <td key={assessment.id} data-label={`${assessment.category}: ${assessment.assessment_name}`}><input aria-label={`${student.full_name}, ${assessment.assessment_name}, score out of ${assessment.max_score}`} type="number" inputMode="decimal" min="0" max={Number(assessment.max_score)} step="0.01" value={value} placeholder="—" onChange={(event) => handleScoreChange(assessment, student.id, event.target.value)} className={changedCells[key] ? "scorebook-cell-edited" : ""} /></td>;
+                    return <td key={assessment.id} data-label={`${CATEGORY_LABELS[assessment.category]}: ${assessment.assessment_name}`}><input aria-label={`${student.full_name}, ${assessment.assessment_name}, score out of ${assessment.max_score}`} type="number" inputMode="decimal" min="0" max={Number(assessment.max_score)} step="0.01" value={value} placeholder="—" onChange={(event) => handleScoreChange(assessment, student.id, event.target.value)} className={changedCells[key] ? "scorebook-cell-edited" : ""} /></td>;
                   })}
-                  <td className="scorebook-grade-cell">{grade === null ? <span className="scorebook-incomplete">Incomplete</span> : <strong className={grade >= 75 ? "scorebook-pass" : "scorebook-fail"}>{grade.toFixed(2)}</strong>}</td>
+                  <td className="scorebook-grade-cell">{!weightsReady ? <span className="scorebook-incomplete">Loading</span> : !weightsValid ? <span className="scorebook-incomplete">Fix weights</span> : grade === null ? <span className="scorebook-incomplete">Incomplete</span> : <strong className={grade >= 75 ? "scorebook-pass" : "scorebook-fail"}>{grade.toFixed(2)}</strong>}</td>
                 </tr>;
               })}
               {!visibleStudents.length && <tr><td colSpan={sortedAssessments.length + 2} className="scorebook-empty">No students match the current search.</td></tr>}
@@ -442,7 +497,7 @@ export function ClassScorebook({
           <section className="scorebook-mobile-assessment-list" aria-label="Manage assessment columns">
             <div className="scorebook-mobile-subheading"><div><span className="form-overline">ASSESSMENTS IN THIS TERM</span><h3>{activeSubject} · Term {activeTerm}</h3></div><span>{sortedAssessments.length} columns</span></div>
             {sortedAssessments.map((assessment) => <div className="scorebook-mobile-assessment" key={assessment.id}>
-              <div><span className={`scorebook-category scorebook-${CATEGORY_ORDER.indexOf(assessment.category)}`}>{assessment.category}</span><strong>{assessment.assessment_name}</strong><small>Highest score: {Number(assessment.max_score)}</small></div>
+              <div><span className={`scorebook-category scorebook-${CATEGORY_ORDER.indexOf(assessment.category)}`}>{CATEGORY_LABELS[assessment.category]}</span><strong>{assessment.assessment_name}</strong><small>Highest score: {Number(assessment.max_score)}</small></div>
               <button type="button" onClick={() => void handleDeleteAssessment(assessment)} disabled={saving} aria-label={`Delete ${assessment.assessment_name}`}>Remove</button>
             </div>)}
           </section>
@@ -450,12 +505,12 @@ export function ClassScorebook({
             {visibleStudents.map((student) => {
               const grade = computedGrades.find((row) => row.studentId === student.id)?.value ?? null;
               return <article className="scorebook-mobile-student-card" key={student.id}>
-                <header><div><strong>{student.full_name}</strong><small>{grade === null ? "Some scores still needed" : grade >= 75 ? "Initial score at/above 75" : "Initial score below 75"}</small></div><span className={grade === null ? "scorebook-incomplete" : grade >= 75 ? "scorebook-pass" : "scorebook-fail"}>{grade === null ? "Incomplete" : grade.toFixed(2)}</span></header>
+                <header><div><strong>{student.full_name}</strong><small>{!weightsReady ? "Loading weights" : !weightsValid ? "Fix category weights" : grade === null ? "Some scores still needed" : grade >= 75 ? "Initial score at/above 75" : "Initial score below 75"}</small></div><span className={!weightsReady || !weightsValid || grade === null ? "scorebook-incomplete" : grade >= 75 ? "scorebook-pass" : "scorebook-fail"}>{!weightsReady ? "Loading" : !weightsValid ? "Fix weights" : grade === null ? "Incomplete" : grade.toFixed(2)}</span></header>
                 {sortedAssessments.map((assessment) => {
                   const key = cellKey(assessment.id, student.id);
                   const value = scoreInputs[key] ?? "";
                   return <label className="scorebook-mobile-score-field" key={assessment.id}>
-                    <span><small>{assessment.category}</small><strong>{assessment.assessment_name}</strong><em>Max {Number(assessment.max_score)}</em></span>
+                    <span><small>{CATEGORY_LABELS[assessment.category]}</small><strong>{assessment.assessment_name}</strong><em>Max {Number(assessment.max_score)}</em></span>
                     <input aria-label={`${student.full_name}, ${assessment.assessment_name}, score out of ${assessment.max_score}`} type="number" inputMode="decimal" min="0" max={Number(assessment.max_score)} step="0.01" value={value} placeholder="—" onChange={(event) => handleScoreChange(assessment, student.id, event.target.value)} className={changedCells[key] ? "scorebook-cell-edited" : ""} />
                   </label>;
                 })}
@@ -465,8 +520,8 @@ export function ClassScorebook({
         </>}
       </div>
 
-      <div className="scorebook-footer"><p>Blank cells mean “not entered”; a score of 0 is a real score. Initial weighted scores appear only after all three assessment categories exist and all of that student’s scores in the selected term are entered.</p><p>These are weighted initial scores, not official transmuted term grades. Configure the school-approved transmutation table and verify grading weights before using them for official reporting.</p></div>
-      <div className="scorebook-tools"><label className="roster-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter students in scorebook" aria-label="Filter students in scorebook" /></label><span>Categories present: {CATEGORY_ORDER.map((item) => `${item} ${categoriesPresent.has(item) ? "✓" : "—"}`).join(" · ")}</span></div>
+      <div className="scorebook-footer"><p>Blank cells mean “not entered”; a score of 0 is a real score. Initial weighted scores appear when every category above 0% has an assessment and all of that student’s scores in those categories are entered.</p><p>These are weighted initial scores, not official transmuted term grades. Configure the school-approved transmutation table and verify grading weights before using them for official reporting.</p></div>
+      <div className="scorebook-tools"><label className="roster-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter students in scorebook" aria-label="Filter students in scorebook" /></label><span>Categories present: {CATEGORY_ORDER.map((item) => `${CATEGORY_LABELS[item]} ${categoriesPresent.has(item) ? "✓" : "—"}`).join(" · ")}</span></div>
     </section>
   );
 }

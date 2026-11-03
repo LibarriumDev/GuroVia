@@ -7,6 +7,7 @@ export type SchoolTenant = {
   id: string;
   name: string;
   short_name: string;
+  official_school_id: string | null;
   slug: string;
   contact_email: string;
   phone: string | null;
@@ -33,7 +34,7 @@ export async function getSchoolBySlug(slug: string, includeSuspended = false): P
   if (!isValidSchoolSlug(slug)) return null;
   const admin = getSupabaseAdmin();
   let query = admin.from("schools")
-    .select("id, name, short_name, slug, contact_email, phone, address, city, province, website, logo_path, status")
+    .select("id, name, short_name, official_school_id, slug, contact_email, phone, address, city, province, website, logo_path, status")
     .eq("slug", slug);
   if (!includeSuspended) query = query.eq("status", "active");
   const { data, error } = await query.maybeSingle();
@@ -55,38 +56,4 @@ export async function getRequestSchool(request: Request): Promise<SchoolTenant |
   const raw = url.searchParams.get("school_slug");
   const slug = raw === null || raw.trim() === "" ? DEFAULT_SCHOOL_SLUG : raw.trim().toLowerCase();
   return getSchoolBySlug(slug);
-}
-
-
-/** Public directory fields only: never expose school contact details or internal IDs. */
-export type SchoolDirectoryItem = {
-  name: string;
-  short_name: string;
-  slug: string;
-  city: string | null;
-  province: string | null;
-  logoUrl: string | null;
-};
-
-export async function listActiveSchoolDirectory(): Promise<SchoolDirectoryItem[]> {
-  try {
-    const admin = getSupabaseAdmin();
-    const { data, error } = await admin.from("schools")
-      .select("name, short_name, slug, city, province, logo_path")
-      .eq("status", "active")
-      .order("name", { ascending: true })
-      .limit(200);
-    if (error) throw error;
-    return (data ?? []).map((school) => ({
-      name: school.name,
-      short_name: school.short_name,
-      slug: school.slug,
-      city: school.city,
-      province: school.province,
-      logoUrl: school.logo_path ? `/api/schools/${encodeURIComponent(school.slug)}/logo` : null
-    }));
-  } catch (error) {
-    console.error("[school-directory] failed", { name: error instanceof Error ? error.name : "UnknownError" });
-    return [];
-  }
 }

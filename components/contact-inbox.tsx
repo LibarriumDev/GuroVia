@@ -23,7 +23,7 @@ function formatDate(value: string) {
   return Number.isNaN(date.getTime()) ? "Unknown date" : new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-export function ContactInbox() {
+export function ContactInbox({ currentYear }: { currentYear: number }) {
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [accessToken, setAccessToken] = useState("");
   const [loading, setLoading] = useState(true);
@@ -147,7 +147,7 @@ export function ContactInbox() {
             ))}
           </section>
         )}
-        <footer className="portal-footer"><span>© {new Date().getFullYear()} GuroVia</span><span>Private school support messages</span><nav className="portal-legal-links" aria-label="Footer links"><Link href="/">Home</Link><Link href="/contact">Contact</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><Link href="/agreement">Agreement</Link><Link href="/cookies">Cookies</Link></nav></footer>
+        <footer className="portal-footer"><span>© {currentYear} GuroVia</span><span>Private school support messages</span><nav className="portal-legal-links" aria-label="Footer links"><Link href="/">Home</Link><Link href="/contact">Contact</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><Link href="/agreement">Agreement</Link><Link href="/cookies">Cookies</Link></nav></footer>
       </div>
     </main>
   );
